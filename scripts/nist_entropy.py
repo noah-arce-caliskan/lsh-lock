@@ -86,12 +86,13 @@ def parse_result(result):
     """Reject missing/non-finite tests instead of silently reporting a partial suite."""
     if result.get("errorLevel") != 0:
         raise ValueError("Official NIST tool reported an error; inspect the raw log/JSON")
-    tests, overall = {}, None
+    tests, overall, seen_overall = {}, None, False
     for case in result.get("testCases", []):
         name = case.get("testCaseDesc")
         if name == "Overall":
-            if overall is not None:
+            if seen_overall:
                 raise ValueError("Duplicate Overall result")
+            seen_overall = True
             overall = case.get("hAssessed")
         elif name in TESTS:
             if name in tests:
@@ -122,15 +123,22 @@ def summarize(records):
     return result
 
 
-def run(args):
-    root, out = args.templates.expanduser().resolve(), args.output.expanduser().resolve()
-    if args.trials < 1 or args.jobs < 1 or args.seed < 0 or args.timeout <= 0:
+def validate_options(args):
+    if (args.trials < 1 or args.jobs < 1 or args.seed < 0
+            or not np.isfinite(args.timeout) or args.timeout <= 0):
         raise ValueError("Trials, jobs and timeout must be positive; seed must be nonnegative")
-    if out.exists():
-        raise ValueError(f"Output already exists; choose a fresh directory: {out}")
     binary = Path(shutil.which(args.nist_bin) or args.nist_bin).expanduser().resolve()
     if not binary.is_file() or not os.access(binary, os.X_OK):
         raise ValueError(f"Official ea_non_iid executable not found: {binary}")
+    return binary
+
+
+def run(args):
+    root, out = args.templates.expanduser().resolve(), args.output.expanduser().resolve()
+    if out.exists():
+        raise ValueError(f"Output already exists; choose a fresh directory: {out}")
+    binary = validate_options(args)
+    binary_digest = sha256(binary.read_bytes())
     bits, manifest, names, groups = load_readings(root)
     width, samples = bits.shape[1], len(names) * bits.shape[1]
     selections = np.stack([select_rows(groups, seed) for seed in range(args.seed, args.seed + args.trials)])
@@ -194,13 +202,15 @@ def run(args):
                     future.cancel()
                 raise
     records.sort(key=lambda r: (r["kind"], r["trial"]))
+    if sha256(binary.read_bytes()) != binary_digest:
+        raise ValueError("NIST executable changed during assessment; no success report written")
     summary = summarize(records)
     write_json(out / "report.json", {"schema_version": 1, "seed_start": args.seed,
         "trials_per_kind": args.trials, "bits_per_reading": width, "identities_per_run": len(names),
         "samples_per_run": samples, "unique_real_selections": len(np.unique(selections, axis=0)),
         "selection": "One reading per identity; sorted identity/filename order, original coordinate order.",
         "control_seed_policy": "Independent fair bits: NumPy default_rng(SeedSequence([20261015, selection_seed])).",
-        "numpy_version": np.__version__, "nist_binary": str(binary), "nist_binary_sha256": sha256(binary.read_bytes()),
+        "numpy_version": np.__version__, "nist_binary": str(binary), "nist_binary_sha256": binary_digest,
         "official_source": "https://github.com/usnistgov/SP800-90B_EntropyAssessment",
         "units": "bits per input bit; no conversion to template security bits", "warnings": warnings,
         "input_manifest": "input_manifest.json", "selection_indices": "selected_rows.npy",

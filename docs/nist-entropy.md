@@ -51,6 +51,61 @@ than the full-template protocol evaluated here. No NIST score is folded into
 the minimum across Ben's other estimators. If per-subset NIST measurements
 are needed, that requires an explicit separate protocol and controls.
 
+### Hook for the full evaluation
+
+`scripts/nist_datasets.py` runs this protocol once for face, iris **test** and
+fingerprint, preflighting all three inputs before starting native jobs:
+
+```bash
+python3 scripts/nist_datasets.py \
+  --data-root /share/common/embeddings/synlock_embeddings \
+  --face-templates /path/to/face_embeddings_noah_nir_dedup \
+  --nist-bin /path/to/ea_non_iid --output-root nist-results/evaluation-v1
+```
+
+The face override is explicit: without it the driver uses the original face
+directory, preserving the previous experiments. It never removes or merges
+labels. Ben's current evaluation uses a separately prepared face directory
+without `0101`; use that same input for a matching evaluation. Its scores need
+a fresh run and must not be presented as reproducing the original 196-label
+results. Iris `conf` is never included. `complete.json` is written only after
+all three assessments succeed. Failed runs retain evidence; choose a fresh
+output directory to retry. There is no automatic resume.
+
+The companion `docs/sample-ind-correct-nist.patch` adds a `nist` group to
+`sample-ind-correct/eval/run_server.sh`, based on its main commit
+`6445e89b103deeed98b07c2e84163a34770299ab`. It also includes that group in
+the default evaluation. Review/apply it in that repository:
+
+```bash
+git -C ../sample-ind-correct apply --check ../lsh-lock/docs/sample-ind-correct-nist.patch
+git -C ../sample-ind-correct apply ../lsh-lock/docs/sample-ind-correct-nist.patch
+cd ../sample-ind-correct
+DRY=1 bash eval/run_server.sh nist
+NIST_EA_NON_IID=/path/to/ea_non_iid bash eval/run_server.sh nist
+```
+
+The `../lsh-lock` path above assumes the sibling checkout has that name.
+`NIST_LSH_ROOT` and `NIST_PYTHON` select the source checkout and Python
+environment. The hook uses `$FACED` by default, so prepare that deduplicated
+directory first (the existing `build` group does this), or explicitly set
+`NIST_FACE`. `NIST_TRIALS`, `NIST_SEED`, `NIST_JOBS` (default 1) and
+`NIST_TIMEOUT` configure execution. Change `NIST_TAG` for each new export or
+configuration: the parent driver skips completed jobs by name, not by input
+hash. Leave failed output directories for inspection and choose a new tag
+when retrying. NIST jobs use their own low concurrency limit, independent of
+the parent's default 190 threads.
+
+This source branch must be merged/cherry-picked into the `entropy-estimators`
+checkout Ben actually builds, or used directly. Publishing this topic branch
+alone will not change his existing checkout or evaluation script. The patch
+is supplied for review; this addition does not modify the other repository.
+The pinned LSH base `63376a9` contains `src/estimators.rs` but does not expose
+the `entropy-suite`/`pair-unions` commands that the parent driver calls.
+That pre-existing integration gap must be reconciled with Ben's working
+version before claiming that the **whole** evaluation can restart. The
+NIST group itself runs through the checked-in Python wrapper.
+
 ## Input and selection
 
 Input layout is `<identity>/<reading>`, with comma-separated binary values.
@@ -98,13 +153,16 @@ silently omitted. An existing output directory is refused.
 ## Tests
 
 ```bash
-python3 scripts/test_nist_entropy.py
+python3 -m unittest discover -s scripts -p 'test_nist*.py'
 cargo test --locked
 ```
 
 Protocol tests cover variable capture counts, preservation of original
 labels, binary input validation, reproducibility, missing/non-finite native
-estimates, inconsistent overall outputs, and summary semantics. Real-tool
+estimates, inconsistent overall outputs, and summary semantics. Native-boundary
+fixtures cover success, failures, hash mismatches, malformed JSON, timeout
+propagation and executable changes. Driver checks cover all-input preflight,
+configuration forwarding and failure markers. Real-tool
 regression checks should additionally compare all ten estimates and input
 hashes to the saved reference experiments; test fixtures alone do not
 validate the native numerical implementation.

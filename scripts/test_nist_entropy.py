@@ -4,7 +4,13 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+import contextlib
+import io
+import json
+import subprocess
+import sys
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 
@@ -23,6 +29,11 @@ def native_fixture():
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_rejects_nonfinite_timeout(self):
+        for timeout in [float('nan'), float('inf'), 0, -1]:
+            with self.assertRaisesRegex(ValueError, 'positive'):
+                nist.validate_options(SimpleNamespace(trials=1,jobs=1,seed=67,timeout=timeout))
+
     def test_refuses_existing_output_before_running_tool(self):
         with tempfile.TemporaryDirectory() as temp:
             args=SimpleNamespace(templates=Path(temp),output=Path(temp),trials=1,jobs=1,seed=67,timeout=1)
@@ -84,6 +95,11 @@ class ProtocolTests(unittest.TestCase):
 
 
 class NativeParsingTests(unittest.TestCase):
+    def test_duplicate_overall_rejected_even_if_first_missing_value(self):
+        r=native_fixture();r['testCases'].insert(0, {'testCaseDesc':'Overall'})
+        with self.assertRaisesRegex(ValueError, 'Duplicate Overall'):
+            nist.parse_result(r)
+
     def test_reads_all_ten_including_different_lrs_and_tuple_fields(self):
         minimum, tests=nist.parse_result(native_fixture())
         self.assertEqual(minimum,.5)
@@ -122,6 +138,57 @@ class NativeParsingTests(unittest.TestCase):
         s=nist.summarize(runs)["real"]
         self.assertEqual(s["suite_minimum"]["median"],.5)
         self.assertEqual(s["per_estimator"][nist.TESTS[0]]["median"],.65)
+
+
+class NativeBoundaryTests(unittest.TestCase):
+    def exercise(self, mode='success'):
+        temporary=tempfile.TemporaryDirectory();self.addCleanup(temporary.cleanup)
+        root=Path(temporary.name);data=root/'data'
+        for label in ['a','b']:
+            (data/label).mkdir(parents=True);(data/label/'r').write_text('0,1,1,0')
+        binary=root/'fake_nist'
+        source=(f'#!{sys.executable}\nimport sys,json,hashlib,pathlib\n'
+                f'r={native_fixture()!r}\n'
+                'r["sha256"]=hashlib.sha256(pathlib.Path(sys.argv[-2]).read_bytes()).hexdigest()\n'
+                'r["toolVersion"]="synthetic-test-fixture"\n')
+        if mode=='hash':
+            source+='r["sha256"]="wrong"\n'
+        if mode=='mutate':
+            source+='p=pathlib.Path(__file__);p.write_text(p.read_text()+"# changed\\n")\n'
+        source+='pathlib.Path(sys.argv[sys.argv.index("-o")+1]).write_text(json.dumps(r))\n'
+        if mode=='json':
+            source+='pathlib.Path(sys.argv[sys.argv.index("-o")+1]).write_text("malformed")\n'
+        binary.write_text(source);binary.chmod(0o755)
+        args=SimpleNamespace(templates=data,output=root/'out',nist_bin=str(binary),
+            trials=1,jobs=1,seed=67,timeout=15,no_controls=False,keep_inputs=False)
+        return args
+
+    def test_successful_native_boundary_writes_all_outputs(self):
+        args=self.exercise()
+        with contextlib.redirect_stdout(io.StringIO()),contextlib.redirect_stderr(io.StringIO()):
+            nist.run(args)
+        report=json.loads((args.output/'report.json').read_text())
+        self.assertEqual(len(report['runs']),2)
+        self.assertEqual(len((args.output/'all_scores.csv').read_text().splitlines()),21)
+        self.assertEqual(report['nist_binary_sha256'],nist.sha256(Path(args.nist_bin).read_bytes()))
+        for record in report['runs']:
+            self.assertEqual(len(record['estimates']),10)
+            self.assertTrue((args.output/record['raw_json']).is_file())
+
+    def test_bad_native_output_and_changed_binary_never_write_success(self):
+        for mode, message in [('hash','input hash'),('json','Expecting value'),('mutate','executable changed')]:
+            args=self.exercise(mode)
+            with contextlib.redirect_stderr(io.StringIO()),self.assertRaisesRegex(ValueError,message):
+                nist.run(args)
+            self.assertFalse((args.output/'report.json').exists())
+
+    def test_timeout_propagates_and_does_not_write_success(self):
+        args=self.exercise();args.no_controls=True
+        with patch.object(nist.subprocess,'run',side_effect=subprocess.TimeoutExpired('fixture',15)):
+            with contextlib.redirect_stderr(io.StringIO()),self.assertRaises(subprocess.TimeoutExpired):
+                nist.run(args)
+        self.assertFalse((args.output/'report.json').exists())
+        self.assertTrue((args.output/'raw/real_0000.log').exists())
 
 
 if __name__ == "__main__":

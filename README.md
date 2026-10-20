@@ -106,6 +106,8 @@ The width is read from the saved files, so the same command supports 512-bit,
 1,024-bit and 1,280-bit readings without changing the wrapper.
 
 See [setup, protocol, output schema and paper methods](docs/nist-entropy.md).
+That page also covers the three-dataset runner and the companion patch for
+Ben's evaluation script, including its explicit deduplicated face input.
 This is a **full-reading stream diagnostic**, separate from the existing
 per-subset estimators. Neither the minimum across NIST tests nor a conversion
 of its rate into template bits is presented as a key-security bound.

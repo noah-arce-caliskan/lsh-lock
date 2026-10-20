@@ -1,0 +1,33 @@
+--- a/eval/run_server.sh
++++ b/eval/run_server.sh
+@@ -16,7 +16,7 @@
+ JOBS=${JOBS:-190}; PAR=${PAR:-12}; BENCHC=${BENCHC:-48}; DRY=${DRY:-0}
+ IRIS=$D/iris_embeddings/test; FACE=$D/face_embeddings_noah_nir; FING=$D/finger_embeddings
+ FACED=$D/face_embeddings_noah_nir_dedup       # face without identity 0101 (same person as 0019)
+-GROUPS_ALL="build b1 noise entropy stl c1 c2 polar timing pair inversion joint tree"
++GROUPS_ALL="build b1 noise entropy nist stl c1 c2 polar timing pair inversion joint tree"
+ SEL=${*:-$GROUPS_ALL}
+ NRUN=0; NSKIP=0; NFAIL=0
+ 
+@@ -104,6 +104,21 @@
+   done
+   i=results/entropy/idx_iris_mu70.bin; u=results/entropy/unions_iris_mu70.bin
+   suite psuite_iris_mu70 $i $IRIS 10000; suite pusuite_iris_mu70 $u $IRIS 2000
++}
++
++# ---------------------------------------------------------------- full-reading NIST diagnostics (once per export)
++# Requires the NIST addition in the adjacent lsh-lock checkout, NumPy and official ea_non_iid.
++# The default face input matches the deduplicated entropy suite above; g_build creates it.
++# Change NIST_TAG for a new input/configuration; existing successful jobs are skipped.
++g_nist() {
++  local nist_repo=${NIST_LSH_ROOT:-../lsh-lock}
++  local nist_python=${NIST_PYTHON:-python3}
++  local tag=${NIST_TAG:-full}
++  run nist_$tag "$nist_python" "$nist_repo/scripts/nist_datasets.py" \
++      --data-root "$D" --face-templates "${NIST_FACE:-$FACED}" \
++      --output-root "$OUT/nist_$tag" --nist-bin "${NIST_EA_NON_IID:-ea_non_iid}" \
++      --trials "${NIST_TRIALS:-1000}" --seed "${NIST_SEED:-67}" \
++      --jobs "${NIST_JOBS:-1}" --timeout "${NIST_TIMEOUT:-180}"
+ }
+ 
+ # ---------------------------------------------------------------- STL baseline: exact TAR and entropy suites
