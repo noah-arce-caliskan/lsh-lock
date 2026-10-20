@@ -43,12 +43,12 @@ Options:
 Generate lockers with respect to zeta values:
 
 ```bash
-cargo run -- zeta-sampling -o output.bin -c confidence.txt -c 250000 -s 80 -a 1.0 --method exponent -d 1024
+cargo run -- zeta-sampling -o output.bin -f confidence.txt -c 250000 -s 80 -a 1.0 --method exponent -d 1024
 ```
 
 Options:
 - `-o, --output`: Output file path
-- `-c, --confidence`: Path to confidence file
+- `-f, --confidence`: Path to confidence file
 - `-c, --count`: Number of samples (default: 250000)
 - `-s, --size`: Size of each sample (default: 80)
 - `-a, --alpha`: Alpha parameter (default: 1.0)
@@ -83,6 +83,32 @@ Options:
 - `-i, --input`: Input file containing indices
 - `-t, --templates`: Templates directory path
 - `-n, --count`: Number of samples to analyze (default: 1000)
+
+### NIST SP 800-90B stream diagnostics
+
+The `nist-entropy` command runs all ten estimators in the **official NIST
+non-IID executable**, with one saved reading per identity in each trial. It
+retains labels, selection indices, input hashes, every native JSON/log, and
+separate outputs for each test. Length-matched independent fair-bit controls
+are enabled by default. Python 3 with NumPy and a separately built official
+`ea_non_iid` executable are required.
+
+```bash
+cargo run --release -- nist-entropy \
+  --templates /share/common/embeddings/synlock_embeddings/face_embeddings_noah_nir \
+  --nist-bin /path/to/SP800-90B_EntropyAssessment/cpp/ea_non_iid \
+  --output nist-results/face --trials 1000 --seed 67 --jobs 2
+```
+
+Use `iris_embeddings/test` for iris and `finger_embeddings` for fingerprints.
+Do not pass the iris parent directory containing the separate `conf` split.
+The width is read from the saved files, so the same command supports 512-bit,
+1,024-bit and 1,280-bit readings without changing the wrapper.
+
+See [setup, protocol, output schema and paper methods](docs/nist-entropy.md).
+This is a **full-reading stream diagnostic**, separate from the existing
+per-subset estimators. Neither the minimum across NIST tests nor a conversion
+of its rate into template bits is presented as a key-security bound.
 
 ### Cosine LSH Generation
 
@@ -141,14 +167,14 @@ Options:
 Find TAR with multiple template matching attempts:
 
 ```bash
-cargo run -- tar-multi -i indices.bin -t templates_dir -n 250000 -t 10 -b 1 --input-selection strategy --output-selection strategy
+cargo run -- tar-multi -i indices.bin -t templates_dir -n 250000 -r 10 -b 1 --input-selection strategy --output-selection strategy
 ```
 
 Options:
 - `-i, --input`: Input file containing indices
 - `-t, --templates`: Templates directory path
 - `-n, --count`: Number of samples to analyze (default: 250000)
-- `-t, --tries`: Number of template attempts (default: 10)
+- `-r, --tries`: Number of template attempts (default: 10)
 - `-b, --base`: Number of base templates (default: 1)
 - `--input-selection`: Strategy for input template selection
 - `--output-selection`: Strategy for output template selection
