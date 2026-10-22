@@ -86,7 +86,8 @@ NIST_EA_NON_IID=/path/to/ea_non_iid bash eval/run_server.sh nist
 ```
 
 The `../lsh-lock` path above assumes the sibling checkout has that name.
-`NIST_LSH_ROOT` and `NIST_PYTHON` select the source checkout and Python
+The hook derives its source root from the selected `$LSH` binary path;
+`NIST_LSH_ROOT` overrides that root, and `NIST_PYTHON` selects the Python
 environment. The hook uses `$FACED` by default, so prepare that deduplicated
 directory first (the existing `build` group does this), or explicitly set
 `NIST_FACE`. `NIST_TRIALS`, `NIST_SEED`, `NIST_JOBS` (default 1) and
@@ -100,11 +101,17 @@ This source branch must be merged/cherry-picked into the `entropy-estimators`
 checkout Ben actually builds, or used directly. Publishing this topic branch
 alone will not change his existing checkout or evaluation script. The patch
 is supplied for review; this addition does not modify the other repository.
-The pinned LSH base `63376a9` contains `src/estimators.rs` but does not expose
+The pinned LSH base `63376a9` contained `src/estimators.rs` but did not expose
 the `entropy-suite`/`pair-unions` commands that the parent driver calls.
-That pre-existing integration gap must be reconciled with Ben's working
-version before claiming that the **whole** evaluation can restart. The
-NIST group itself runs through the checked-in Python wrapper.
+This branch now registers those commands through the existing functions,
+without modifying estimator math; see [estimator-cli.md](estimator-cli.md)
+for defaults, output formats and retained limitations. The companion patch
+checks command availability before starting expensive entropy jobs, and
+counted foreground failures return a nonzero evaluation status. NIST remains
+its own full-reading group through the Python wrapper. Local compatibility
+checks do not constitute execution of the full cryptographic evaluation;
+Ben must build/adopt the reviewed branch and parent patch in his working
+checkout before restarting it.
 
 ## Input and selection
 

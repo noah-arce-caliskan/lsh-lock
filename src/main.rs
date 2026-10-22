@@ -1,5 +1,7 @@
 mod confidence;
 mod entropy;
+mod estimator_cli;
+mod estimators;
 mod tar;
 mod types;
 
@@ -25,6 +27,16 @@ struct Opt {
 
 #[derive(StructOpt)]
 enum Command {
+    #[structopt(
+        name = "entropy-suite",
+        about = "Run the existing per-subset estimators, optionally on a noise-matched null."
+    )]
+    EntropySuite(estimator_cli::SuiteArgs),
+    #[structopt(
+        name = "pair-unions",
+        about = "Generate unions using the existing overlap/random pair sampler."
+    )]
+    PairUnions(estimator_cli::PairArgs),
     #[structopt(
         name = "nist-entropy",
         about = "Run official NIST stream diagnostics with one reading per identity."
@@ -187,6 +199,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opt = Opt::from_args();
 
     match opt.cmd {
+        Command::EntropySuite(args) => estimator_cli::suite(args)?,
+        Command::PairUnions(args) => estimator_cli::pairs(args)?,
         Command::NistEntropy {
             templates,
             output,
@@ -420,6 +434,62 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod cli_tests {
     use super::*;
+
+    #[test]
+    fn parent_estimator_command_forms_are_registered() {
+        let opt = Opt::from_iter_safe([
+            "lsh-lock",
+            "entropy-suite",
+            "-i",
+            "idx.bin",
+            "-t",
+            "data",
+            "-n",
+            "10000",
+            "--csv",
+            "suite.csv",
+        ])
+        .unwrap();
+        match opt.cmd {
+            Command::EntropySuite(args) => {
+                assert_eq!(args.count, 10000);
+                assert_eq!((args.heavy, args.samples, args.seed), (20, 100000, 67));
+                assert!(!args.synthetic_null);
+            }
+            _ => panic!("wrong command"),
+        }
+        let opt = Opt::from_iter_safe([
+            "lsh-lock",
+            "entropy-suite",
+            "-i",
+            "idx.bin",
+            "-t",
+            "data",
+            "-n",
+            "10000",
+            "--null",
+        ])
+        .unwrap();
+        assert!(matches!(opt.cmd, Command::EntropySuite(args) if args.synthetic_null));
+        let opt = Opt::from_iter_safe([
+            "lsh-lock",
+            "pair-unions",
+            "-i",
+            "idx.bin",
+            "-o",
+            "unions.bin",
+            "--pool",
+            "5000",
+            "--top",
+            "1000",
+            "--random",
+            "1000",
+        ])
+        .unwrap();
+        assert!(
+            matches!(opt.cmd, Command::PairUnions(args) if args.pool == 5000 && args.top == 1000 && args.random == 1000)
+        );
+    }
 
     #[test]
     fn nist_command_parses_without_colliding_with_existing_short_flags() {

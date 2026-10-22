@@ -9,20 +9,35 @@
  SEL=${*:-$GROUPS_ALL}
  NRUN=0; NSKIP=0; NFAIL=0
  
-@@ -104,6 +104,21 @@
+@@ -90,6 +90,12 @@
+   run $1_null $LSH entropy-suite -i $2 -t $3 -n $4 --null
+ }
+ g_entropy() {
++  # Fail before launching expensive jobs if the selected LSH binary lacks its estimator commands.
++  if [ "$DRY" != 1 ]; then
++    for cmd in entropy-suite pair-unions; do
++      "$LSH" "$cmd" --help >/dev/null 2>&1 || { echo "LSH binary lacks $cmd; build the reviewed entropy branch: $LSH" >&2; exit 1; }
++    done
++  fi
+   # single subsets and best-overlap unions at the C1 / C3 operating points (face on the dedup copy)
+   for spec in "iris $IRIS 70 512 suite" "face $FACED 65 512 dsuite" "fing $FING 60 1280 suite" \
+               "iris $IRIS 60 512 psuite" "face $FACED 50 512 psuite" "fing $FING 60 1280 psuite" "fing $FING 50 1280 psuite"; do
+@@ -104,6 +110,23 @@
    done
    i=results/entropy/idx_iris_mu70.bin; u=results/entropy/unions_iris_mu70.bin
    suite psuite_iris_mu70 $i $IRIS 10000; suite pusuite_iris_mu70 $u $IRIS 2000
 +}
 +
 +# ---------------------------------------------------------------- full-reading NIST diagnostics (once per export)
-+# Requires the NIST addition in the adjacent lsh-lock checkout, NumPy and official ea_non_iid.
-+# The default face input matches the deduplicated entropy suite above; g_build creates it.
-+# Change NIST_TAG for a new input/configuration; existing successful jobs are skipped.
++# Separate full-reading tests, never folded into the per-subset estimator minimum.
++# FACED matches the existing evaluation configuration; this hook never changes source labels.
 +g_nist() {
-+  local nist_repo=${NIST_LSH_ROOT:-../lsh-lock}
++  local nist_repo=${NIST_LSH_ROOT:-$(dirname "$(dirname "$(dirname "$LSH")")")}
 +  local nist_python=${NIST_PYTHON:-python3}
 +  local tag=${NIST_TAG:-full}
++  if [ "$DRY" != 1 ] && [ ! -f "$nist_repo/scripts/nist_datasets.py" ]; then
++    echo "NIST wrapper missing; set NIST_LSH_ROOT to the reviewed LSH source checkout" >&2; exit 1
++  fi
 +  run nist_$tag "$nist_python" "$nist_repo/scripts/nist_datasets.py" \
 +      --data-root "$D" --face-templates "${NIST_FACE:-$FACED}" \
 +      --output-root "$OUT/nist_$tag" --nist-bin "${NIST_EA_NON_IID:-ea_non_iid}" \
@@ -31,3 +46,9 @@
  }
  
  # ---------------------------------------------------------------- STL baseline: exact TAR and entropy suites
+@@ -298,3 +321,5 @@
+   echo "##### group $g"; g_$g
+ done
+ echo "=== $(date '+%F %T') done: $NRUN run, $NSKIP skipped (already complete), $NFAIL failed; results in $OUT"
++# Foreground failures (including NIST) must not look like a successful evaluation.
++[ "$NFAIL" -eq 0 ] || exit 1

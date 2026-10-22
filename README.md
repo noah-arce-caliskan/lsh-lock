@@ -24,6 +24,11 @@ cargo build --release
 
 You will need biometric embeddings to run this. Embeddings of synthetic irises are available in the [main repository](https://github.com/whyamey/feap). The tool provides several commands for different operations:
 
+The parent evaluation's `entropy-suite` and `pair-unions` commands are
+documented in [the estimator CLI guide](docs/estimator-cli.md). Separate
+full-reading NIST diagnostics and the companion evaluation hook are in
+[the NIST integration guide](docs/nist-entropy.md).
+
 ### Random Sampling
 
 Generate lockers without considering zeta values:
