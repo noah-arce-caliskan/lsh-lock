@@ -91,11 +91,17 @@ The hook derives its source root from the selected `$LSH` binary path;
 environment. The hook uses `$FACED` by default, so prepare that deduplicated
 directory first (the existing `build` group does this), or explicitly set
 `NIST_FACE`. `NIST_TRIALS`, `NIST_SEED`, `NIST_JOBS` (default 1) and
-`NIST_TIMEOUT` configure execution. Change `NIST_TAG` for each new export or
-configuration: the parent driver skips completed jobs by name, not by input
-hash. Leave failed output directories for inspection and choose a new tag
-when retrying. NIST jobs use their own low concurrency limit, independent of
-the parent's default 190 threads.
+`NIST_TIMEOUT` configure execution. Every NIST invocation runs afresh, including
+when its inputs and configuration are unchanged. It creates a unique
+`$OUT/nist_<tag>_<suffix>/assessment` result root, with the parent's `.txt` or
+`.part`/`.err` job logs alongside the attempt directory. `NIST_TAG` is an
+optional human-readable prefix (default `full`); it is not a cache key. It
+accepts letters, digits, dots, underscores and hyphens. Existing results,
+including failed attempts and legacy `nist_full.txt` logs, are never reused
+or deleted. Retrying allocates a fresh attempt automatically. Dry runs do
+not allocate an attempt. Other evaluation groups retain their existing
+skip behavior. NIST jobs use their own low concurrency limit, independent
+of the parent's default 190 threads.
 
 This source branch must be merged/cherry-picked into the `entropy-estimators`
 checkout Ben actually builds, or used directly. Publishing this topic branch
